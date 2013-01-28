@@ -32,38 +32,6 @@ def homepage(request):
         except UserSettings.DoesNotExist:
             return HttpResponseRedirect(reverse('helpdesk_dashboard'))
 
-    queue_choices = ([('', '--------')] +
-            [[q.id, q.title] for q in Queue.objects.filter(allow_public_submission=True)])
-    if request.method == 'POST':
-        form = PublicTicketForm(request.POST, request.FILES)
-        form.fields['queue'].choices = queue_choices
-        if form.is_valid():
-            if text_is_spam(form.cleaned_data['body'], request):
-                # This submission is spam. Let's not save it.
-                return render_to_response('helpdesk/public_spam.html', RequestContext(request, {}))
-            else:
-                ticket = form.save()
-                return HttpResponseRedirect('%s?ticket=%s&email=%s' % (
-                    reverse('helpdesk_public_view'),
-                    ticket.ticket_for_url,
-                    ticket.submitter_email)
-                    )
-    else:
-        try:
-            queue = Queue.objects.get(slug=request.GET.get('queue',
-                                                           helpdesk_settings.HELPDESK_DEFAULT_QUEUE))
-        except Queue.DoesNotExist:
-            queue = None
-        initial_data = {}
-        if queue:
-            initial_data['queue'] = queue.id
-
-        if request.user.is_authenticated() and request.user.email:
-            initial_data['submitter_email'] = request.user.email
-
-        form = PublicTicketForm(initial=initial_data)
-        form.fields['queue'].choices = queue_choices
-
     knowledgebase_categories = KBCategory.objects.all()
 
     open_tickets = None
@@ -77,7 +45,6 @@ def homepage(request):
 
     return render_to_response('helpdesk/public_homepage.html',
         RequestContext(request, {
-            'form': form,
             'kb_categories': knowledgebase_categories,
             'open_tickets': open_tickets,
             'closed_tickets': closed_tickets

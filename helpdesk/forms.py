@@ -128,7 +128,7 @@ class TicketForm(forms.Form):
     submitter_email = forms.EmailField(
         required=False,
         label=_('Submitter E-Mail Address'),
-        widget=forms.TextInput(attrs={'size':'60'}),
+        widget=forms.TextInput(attrs={'size': '60'}),
         help_text=_('This e-mail address will receive copies of all public '
             'updates to this ticket.'),
         )
@@ -190,6 +190,9 @@ class TicketForm(forms.Form):
         """
         Add any custom fields that are defined to the form
         """
+        email_required = False
+        if 'email_required' in kwargs:
+            email_required = kwargs.pop('email_required', False)
         super(TicketForm, self).__init__(*args, **kwargs)
         for field in CustomField.objects.all():
             instanceargs = {
@@ -214,7 +217,7 @@ class TicketForm(forms.Form):
                 fieldclass = forms.ChoiceField
                 choices = field.choices_as_array
                 if field.empty_selection_list:
-                    choices.insert(0, ('','---------' ) )
+                    choices.insert(0, ('', '---------' ))
                 instanceargs['choices'] = choices
             elif field.data_type == 'boolean':
                 fieldclass = forms.BooleanField
@@ -233,9 +236,8 @@ class TicketForm(forms.Form):
                 fieldclass = forms.IPAddressField
             elif field.data_type == 'slug':
                 fieldclass = forms.SlugField
-            
             self.fields['custom_%s' % field.name] = fieldclass(**instanceargs)
-
+        self.fields['submitter_email'].required = email_required
 
     def save(self, user):
         """

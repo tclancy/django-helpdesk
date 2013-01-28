@@ -62,7 +62,8 @@ def dashboard(request):
     showing ticket counts by queue/status, and a list of unassigned tickets
     with options for them to 'Take' ownership of said tickets.
     """
-
+    if not request.user.is_staff:
+        return HttpResponseRedirect(reverse('helpdesk_home'))
     # open & reopened tickets, assigned to current user
     tickets = Ticket.objects.filter(
             assigned_to=request.user,
@@ -127,8 +128,7 @@ def dashboard(request):
                 GROUP BY queue, name
                 ORDER BY q.id;
         """)    
-    
-    
+
     dash_tickets = query_to_dict(cursor.fetchall(), cursor.description)
 
     return render_to_response('helpdesk/dashboard.html',
@@ -913,7 +913,7 @@ def create_ticket(request):
         queue_choices = [('', '--------')] + [[q.id, q.title] for q in Queue.objects.all()]
 
     if request.method == 'POST':
-        form = TicketForm(request.POST, request.FILES)
+        form = TicketForm(request.POST, request.FILES, email_required=True)
         form.fields['queue'].choices = queue_choices
         form.fields['assigned_to'].choices = assignees
         if form.is_valid():
@@ -925,12 +925,12 @@ def create_ticket(request):
         }
         if request.user.email:
             initial_data['submitter_email'] = request.user.email
-        form = TicketForm(initial=initial_data)
+        form = TicketForm(initial=initial_data, email_required=True)
 
         form.fields['queue'].choices = queue_choices
         form.fields['assigned_to'].choices = assignees
-        if helpdesk_settings.HELPDESK_CREATE_TICKET_HIDE_ASSIGNED_TO:
-            form.fields['assigned_to'].widget = forms.HiddenInput()
+    if helpdesk_settings.HELPDESK_CREATE_TICKET_HIDE_ASSIGNED_TO:
+        form.fields['assigned_to'].widget = forms.HiddenInput()
 
     return render_to_response('helpdesk/create_ticket.html',
         RequestContext(request, {
