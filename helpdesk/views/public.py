@@ -8,14 +8,14 @@ views/public.py - All public facing views, eg non-staff (no authentication
 """
 
 from django.core.urlresolvers import reverse
-from django.http import HttpResponseRedirect, Http404, HttpResponse
-from django.shortcuts import render_to_response, get_object_or_404
-from django.template import loader, Context, RequestContext
+from django.http import HttpResponseRedirect
+from django.shortcuts import render_to_response
+from django.template import RequestContext
 from django.utils.translation import ugettext as _
 
 from helpdesk import settings as helpdesk_settings
 from helpdesk.forms import PublicTicketForm
-from helpdesk.lib import send_templated_mail, text_is_spam
+from helpdesk.lib import text_is_spam
 from helpdesk.models import Ticket, Queue, UserSettings, KBCategory
 
 
@@ -23,7 +23,7 @@ def homepage(request):
     if not request.user.is_authenticated() and helpdesk_settings.HELPDESK_REDIRECT_TO_LOGIN_BY_DEFAULT:
         return HttpResponseRedirect(reverse('login'))
 
-    if (request.user.is_staff or (request.user.is_authenticated() and helpdesk_settings.HELPDESK_ALLOW_NON_STAFF_TICKET_UPDATE)):
+    if request.user.is_staff:
         try:
             if getattr(request.user.usersettings.settings, 'login_view_ticketlist', False):
                 return HttpResponseRedirect(reverse('helpdesk_list'))
@@ -32,23 +32,26 @@ def homepage(request):
         except UserSettings.DoesNotExist:
             return HttpResponseRedirect(reverse('helpdesk_dashboard'))
 
+    queue_choices = ([('', '--------')] +
+            [[q.id, q.title] for q in Queue.objects.filter(allow_public_submission=True)])
     if request.method == 'POST':
         form = PublicTicketForm(request.POST, request.FILES)
-        form.fields['queue'].choices = [('', '--------')] + [[q.id, q.title] for q in Queue.objects.filter(allow_public_submission=True)]
+        form.fields['queue'].choices = queue_choices
         if form.is_valid():
             if text_is_spam(form.cleaned_data['body'], request):
                 # This submission is spam. Let's not save it.
                 return render_to_response('helpdesk/public_spam.html', RequestContext(request, {}))
             else:
                 ticket = form.save()
-                return HttpResponseRedirect('%s?ticket=%s&email=%s'% (
+                return HttpResponseRedirect('%s?ticket=%s&email=%s' % (
                     reverse('helpdesk_public_view'),
                     ticket.ticket_for_url,
                     ticket.submitter_email)
                     )
     else:
         try:
-            queue = Queue.objects.get(slug=request.GET.get('queue', None))
+            queue = Queue.objects.get(slug=request.GET.get('queue',
+                                                           helpdesk_settings.HELPDESK_DEFAULT_QUEUE))
         except Queue.DoesNotExist:
             queue = None
         initial_data = {}
@@ -59,15 +62,25 @@ def homepage(request):
             initial_data['submitter_email'] = request.user.email
 
         form = PublicTicketForm(initial=initial_data)
-        form.fields['queue'].choices = [('', '--------')] + [[q.id, q.title] for q in Queue.objects.filter(allow_public_submission=True)]
+        form.fields['queue'].choices = queue_choices
 
     knowledgebase_categories = KBCategory.objects.all()
+
+    open_tickets = None
+    closed_tickets = None
+    if request.user.is_authenticated():
+        open_tickets = Ticket.objects.filter(status=Ticket.OPEN_STATUS)
+        if not request.user.is_staff:
+            open_tickets = open_tickets.filter(submitter_email=request.user.email)
+            closed_tickets = Ticket.objects.filter(status=Ticket.CLOSED_STATUS,
+                                                   submitter_email=request.user.email)
 
     return render_to_response('helpdesk/public_homepage.html',
         RequestContext(request, {
             'form': form,
-            'helpdesk_settings': helpdesk_settings,
-            'kb_categories': knowledgebase_categories
+            'kb_categories': knowledgebase_categories,
+            'open_tickets': open_tickets,
+            'closed_tickets': closed_tickets
         }))
 
 
@@ -120,7 +133,6 @@ def view_ticket(request):
             return render_to_response('helpdesk/public_view_ticket.html',
                 RequestContext(request, {
                     'ticket': ticket,
-                    'helpdesk_settings': helpdesk_settings,
                     'next': redirect_url,
                 }))
 
@@ -129,7 +141,6 @@ def view_ticket(request):
             'ticket': ticket,
             'email': email,
             'error_message': error_message,
-            'helpdesk_settings': helpdesk_settings,
         }))
 
 def change_language(request):

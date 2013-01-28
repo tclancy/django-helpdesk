@@ -19,9 +19,9 @@ from django.core.exceptions import ValidationError
 from django.core import paginator
 from django.db import connection
 from django.db.models import Q
-from django.http import HttpResponseRedirect, Http404, HttpResponse, HttpResponseForbidden
+from django.http import HttpResponseRedirect, Http404, HttpResponse
 from django.shortcuts import render_to_response, get_object_or_404
-from django.template import loader, Context, RequestContext
+from django.template import RequestContext
 from django.utils.translation import ugettext as _
 from django.utils.html import escape
 from django import forms
@@ -31,7 +31,9 @@ try:
 except ImportError:
     from datetime import datetime as timezone
 
-from helpdesk.forms import TicketForm, UserSettingsForm, EmailIgnoreForm, EditTicketForm, TicketCCForm, EditFollowUpForm, TicketDependencyForm
+from helpdesk.forms import (TicketForm, UserSettingsForm, EmailIgnoreForm,
+                            EditTicketForm, TicketCCForm, EditFollowUpForm,
+                            TicketDependencyForm)
 from helpdesk.lib import send_templated_mail, query_to_dict, apply_query, safe_template_context
 from helpdesk.models import Ticket, Queue, FollowUp, TicketChange, PreSetReply, Attachment, SavedSearch, IgnoreEmail, TicketCC, TicketDependency
 from helpdesk.settings import HAS_TAG_SUPPORT
@@ -47,7 +49,8 @@ else:
     try:
         from django.contrib.admin.views.decorators import staff_member_required
     except:
-        staff_member_required = user_passes_test(lambda u: u.is_authenticated() and u.is_active and u.is_staff)
+        staff_member_required = user_passes_test(
+            lambda u: u.is_authenticated() and u.is_active and u.is_staff)
 
 
 superuser_required = user_passes_test(lambda u: u.is_authenticated() and u.is_active and u.is_superuser)
@@ -64,13 +67,13 @@ def dashboard(request):
     tickets = Ticket.objects.filter(
             assigned_to=request.user,
         ).exclude(
-            status__in = [Ticket.CLOSED_STATUS, Ticket.RESOLVED_STATUS],
+            status__in=[Ticket.CLOSED_STATUS, Ticket.RESOLVED_STATUS],
         )
 
     # closed & resolved tickets, assigned to current user
-    tickets_closed_resolved =  Ticket.objects.filter(
+    tickets_closed_resolved = Ticket.objects.filter(
             assigned_to=request.user, 
-            status__in = [Ticket.CLOSED_STATUS, Ticket.RESOLVED_STATUS])
+            status__in=[Ticket.CLOSED_STATUS, Ticket.RESOLVED_STATUS])
 
     unassigned_tickets = Ticket.objects.filter(
             assigned_to__isnull=True,
@@ -883,7 +886,7 @@ def edit_ticket(request, ticket_id):
             return HttpResponseRedirect(ticket.get_absolute_url())
     else:
         form = EditTicketForm(instance=ticket)
-    
+
     return render_to_response('helpdesk/edit_ticket.html',
         RequestContext(request, {
             'form': form,
@@ -891,29 +894,41 @@ def edit_ticket(request, ticket_id):
         }))
 edit_ticket = staff_member_required(edit_ticket)
 
+
 def create_ticket(request):
     if helpdesk_settings.HELPDESK_STAFF_ONLY_TICKET_OWNERS:
         assignable_users = User.objects.filter(is_active=True, is_staff=True).order_by('username')
     else:
         assignable_users = User.objects.filter(is_active=True).order_by('username')
-        
+
+    if helpdesk_settings.HELPDESK_DEFAULT_ASSIGNEE:
+        assignees = [[u.id, u.username] for u in
+            assignable_users.filter(username=helpdesk_settings.HELPDESK_DEFAULT_ASSIGNEE)]
+    else:
+        assignees = [('', '--------')] + [[u.id, u.username] for u in assignable_users]
+    if helpdesk_settings.HELPDESK_DEFAULT_QUEUE:
+        queue_choices = [[q.id, q.title]
+            for q in Queue.objects.filter(slug=helpdesk_settings.HELPDESK_DEFAULT_QUEUE)]
+    else:
+        queue_choices = [('', '--------')] + [[q.id, q.title] for q in Queue.objects.all()]
+
     if request.method == 'POST':
         form = TicketForm(request.POST, request.FILES)
-        form.fields['queue'].choices = [('', '--------')] + [[q.id, q.title] for q in Queue.objects.all()]
-        form.fields['assigned_to'].choices = [('', '--------')] + [[u.id, u.username] for u in assignable_users]
+        form.fields['queue'].choices = queue_choices
+        form.fields['assigned_to'].choices = assignees
         if form.is_valid():
             ticket = form.save(user=request.user)
             return HttpResponseRedirect(ticket.get_absolute_url())
     else:
-        initial_data = {}
-        if request.user.usersettings.settings.get('use_email_as_submitter', False) and request.user.email:
+        initial_data = {
+            'queue': request.GET.get('queue', helpdesk_settings.HELPDESK_DEFAULT_QUEUE)
+        }
+        if request.user.email:
             initial_data['submitter_email'] = request.user.email
-        if request.GET.has_key('queue'):
-            initial_data['queue'] = request.GET['queue']
-
         form = TicketForm(initial=initial_data)
-        form.fields['queue'].choices = [('', '--------')] + [[q.id, q.title] for q in Queue.objects.all()]
-        form.fields['assigned_to'].choices = [('', '--------')] + [[u.id, u.username] for u in assignable_users]
+
+        form.fields['queue'].choices = queue_choices
+        form.fields['assigned_to'].choices = assignees
         if helpdesk_settings.HELPDESK_CREATE_TICKET_HIDE_ASSIGNED_TO:
             form.fields['assigned_to'].widget = forms.HiddenInput()
 
