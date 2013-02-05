@@ -27,8 +27,8 @@ from helpdesk import settings as helpdesk_settings
 class EditTicketForm(forms.ModelForm):
     class Meta:
         model = Ticket
-        exclude = ('created', 'modified', 'status', 'on_hold', 'resolution', 'last_escalation', 'assigned_to')
-    
+        exclude = ('created', 'modified', 'status', 'on_hold', 'resolution', 'last_escalation')
+
     def __init__(self, *args, **kwargs):
         """
         Add any custom fields that are defined to the form
@@ -82,12 +82,9 @@ class EditTicketForm(forms.ModelForm):
                 fieldclass = forms.IPAddressField
             elif field.data_type == 'slug':
                 fieldclass = forms.SlugField
-            
             self.fields['custom_%s' % field.name] = fieldclass(**instanceargs)
 
-
     def save(self, *args, **kwargs):
-        
         for field, value in self.cleaned_data.items():
             if field.startswith('custom_'):
                 field_name = field.replace('custom_', '')

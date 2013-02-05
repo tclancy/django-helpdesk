@@ -8,7 +8,7 @@
 {% else %}
     <h2>{% trans "Login" %}</h2>
 
-    <p>{% trans "To log in and begin responding to cases, simply enter your username and password below." %}</p>
+    <p>{% trans "Log in to submit new tickets and review existing tickets." %}</p>
 
     <form method='post' action='./'>
         {% if form.errors %}<p>{% trans "Your username and password didn't match. Please try again." %}</p>{% endif %}
